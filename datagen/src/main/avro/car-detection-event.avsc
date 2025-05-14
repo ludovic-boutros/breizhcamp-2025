@@ -1,0 +1,39 @@
+{
+  "type": "record",
+  "name": "CarDetectedEvent",
+  "namespace": "bzh.breizhcamp.avro",
+  "doc": "Detection event of a car",
+  "fields": [
+    {
+      "name": "sensorId",
+      "type": "string"
+    },
+    {
+      "name": "vin",
+      "type": "string"
+    },
+    {
+      "name": "licensePlate",
+      "type": "string"
+    },
+    {
+      "name": "city",
+      "type": "string"
+    },
+    {
+      "name": "x",
+      "type": "int"
+    },
+    {
+      "name": "y",
+      "type": "int"
+    },
+    {
+      "name": "timestamp",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      }
+    }
+  ]
+}
