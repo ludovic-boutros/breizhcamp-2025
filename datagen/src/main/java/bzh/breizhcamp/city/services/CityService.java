@@ -104,6 +104,8 @@ public class CityService implements Closeable {
 
     void moveCarToNextPosition(Car car, Car followedCar) {
         if (followedCar != null) {
+            // TODO: if the other car did not move, should not move.
+            // TODO: I think the move should be triggered by the other car
             if (car.getPosition().compareTo(followedCar.getPosition()) > 1) {
                 // Let some distance between the two cars ;)
                 car.setLastPosition(car.getPosition());
@@ -164,7 +166,7 @@ public class CityService implements Closeable {
 
     @NotNull
     private String sensorId(Car car) {
-        return String.join("-", city.getName(), Integer.toString(car.getPosition().getX()), Integer.toString(car.getPosition().getY()));
+        return String.join("-", city.getId(), Integer.toString(car.getPosition().getX()), Integer.toString(car.getPosition().getY()));
     }
 
     private int getNextCoordinate(int currentCoordinate, int lastCoordinate) {

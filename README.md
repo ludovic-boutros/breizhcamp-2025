@@ -22,6 +22,10 @@ open http://localhost:8081
 podman compose run sql-client
 ```
 
+## Application
+
+TODO
+
 ## General
 
 ### Create a demo topic
@@ -306,6 +310,18 @@ https://github.com/knaufk/advent-of-flink-2024/blob/main/08_current_watermark.md
 SELECT sensorId, CURRENT_WATERMARK(`timestamp`) AS CURRENT_WATERMARK FROM `car_detected`;
 ```
 
+### Solution
+
+- Recreate the topic with fewer partitions. (Hoping that the keys will be evenly distributed, or at least that all
+  partitions), but would reduce the maximum parallelism.
+- Use another message key.
+- Create a bigger city.
+- Configure an idle timeout:
+
+```sql
+ALTER TABLE `car_detected` SET ('scan.watermark.idle-timeout'='5sec');
+```
+
 Delete the current city, again :p.
 
 ```shell
@@ -314,18 +330,6 @@ export encoded_name=$(echo -n "$name" | jq -s -R -r @uri)
 
 curl -s -X DELETE "http://localhost:7070/cities/${encoded_name}" | jq .
 curl -s -X GET http://localhost:7070/cities | jq .
-```
-
-### Solution
-
-- Recreate the topic with 2 partitions. (Hoping that the keys will be evenly distributed, or at least that all
-  partitions)
-- Use another message key.
-- Create a bigger city.
-- configure an idle timeout:
-
-```sql
-ALTER TABLE `car_detected` SET ('scan.watermark.idle-timeout'='5sec');
 ```
 
 Create a bigger city of size 5.
@@ -365,7 +369,7 @@ curl -s -X DELETE "http://localhost:7070/cities/${encoded_name}" | jq .
 curl -s -X GET http://localhost:7070/cities | jq .
 ```
 
-Then create a new city with 10000 cars.
+Then create a new city of size 10000 with 20000 cars.
 
 ```shell
 curl -s -X POST "http://localhost:7070/cities?size=10000" | jq .
@@ -409,7 +413,7 @@ Restart it:
 podman compose start taskmanager
 ```
 
-## A better approach
+### A better approach
 
 ```sql
 SELECT *
@@ -436,7 +440,7 @@ FROM `car_detected`
 Fixing the pattern to a fixed size will help the task manager to keep the state small.
 Does not respect the original requirements.
 
-## Another different approach
+### Another different approach
 
 ```sql
 SELECT *
@@ -461,7 +465,7 @@ FROM `car_detected`
     );
 ```
 
-10_000 * 10_000 = 100_000_000 potential different opened patterns in memory!
+10_000 * 20_000 = 100_000_000 potential different opened patterns in memory!
 We need to limit the number of opened patterns to a reasonable number using a `WITHIN INTERVAL` clause.
 We could as well increase the memory size of the job manager.
 
@@ -473,28 +477,27 @@ kafka-topics --create --topic same-car-detected --bootstrap-server localhost:909
 
 ```sql
 CREATE TABLE `same_car_detected` (
-   `sensorId` STRING,
-   `vin` STRING,
-   `licensePlate` STRING,
-   `city` STRING,
-   `x` INT,
-   `y` INT,
-   `timestamp_1` TIMESTAMP(3),
-   `timestamp_2` TIMESTAMP(3),
+   `sensorId` STRING NOT NULL,
+   `vin` STRING NOT NULL,
+   `licensePlate` STRING NOT NULL,
+   `city` STRING NOT NULL,
+   `x` INT NOT NULL,
+   `y` INT NOT NULL,
+   `timestamp_1` TIMESTAMP(3) NOT NULL,
+   `timestamp_2` TIMESTAMP(3) NOT NULL,
    WATERMARK FOR `timestamp_2` AS `timestamp_2`
  ) 
  WITH (
    'connector' = 'kafka',
    'topic' = 'same-car-detected',
    'properties.bootstrap.servers' = 'broker:29092',
-   'properties.group.id' = 'flink-car-detection',
+   'properties.group.id' = 'flink-same-car-detection',
    'properties.auto.offset.reset' = 'earliest',
    -- UTF-8 string as Kafka keys
    'key.format' = 'raw',
    'key.fields' = 'sensorId',
    'value.format' = 'avro-confluent',
-   'value.avro-confluent.url' = 'http://schema-registry:6081',
-   'value.fields-include' = 'EXCEPT_KEY'
+   'value.avro-confluent.url' = 'http://schema-registry:6081'
  );
  ```
 
@@ -524,5 +527,147 @@ FROM `car_detected`
 
 ## Detect cars following another car
 
+First delete the current city.
+
+```shell
+name=$(curl -s -X GET http://localhost:7070/cities | jq -r '.[0].name')
+export encoded_name=$(echo -n "$name" | jq -s -R -r @uri)
+
+curl -s -X DELETE "http://localhost:7070/cities/${encoded_name}" | jq .
+curl -s -X GET http://localhost:7070/cities | jq .
+```
+
+Then create a new city of size 100 with 10 cars.
+
+```shell
+curl -s -X POST "http://localhost:7070/cities?size=100" | jq .
+curl -s -X GET http://localhost:7070/cities | jq .
+
+name=$(curl -s -X GET http://localhost:7070/cities | jq -r '.[0].name')
+export encoded_name=$(echo -n "$name" | jq -s -R -r @uri)
+
+curl -s -X POST "http://localhost:7070/cities/${encoded_name}/cars?count=10" | jq .
+```
+
+Add a car following another car.
+
+```shell
+name=$(curl -s -X GET http://localhost:7070/cities | jq -r '.[0].name')
+export encoded_name=$(echo -n "$name" | jq -s -R -r @uri)
+export vin=$(curl -s -X GET "http://localhost:7070/cities/${encoded_name}/cars" | jq -r '.[0].vin')
+
+curl -s -X POST "http://localhost:7070/cities/${name}/cars?vin=${vin}" | jq .
+```
+
+### Transform the data in order to get car's paths as a key.
+
+Create an intermediate topic to store the data.
+
+```shell
+kafka-topics --create --topic car-paths --bootstrap-server localhost:9092 --partitions 6 --replication-factor 1
+```
+
 ```sql
+CREATE TABLE `car_paths` (
+   `vin` STRING NOT NULL,
+   `city` STRING NOT NULL,
+   `licensePlate` STRING NOT NULL,
+   `lastX` INT NOT NULL,
+   `lastY` INT NOT NULL,
+   `sensorIds` STRING NOT NULL,
+   `pathId` STRING NOT NULL,
+   `startTime` TIMESTAMP(3) NOT NULL,
+   `endTime` TIMESTAMP(3) NOT NULL,
+   WATERMARK FOR `endTime` AS `endTime`
+ ) 
+ WITH (
+   'connector' = 'kafka',
+   'topic' = 'car-paths',
+   'properties.bootstrap.servers' = 'broker:29092',
+   'properties.group.id' = 'flink-car-paths',
+   'properties.auto.offset.reset' = 'earliest',
+   -- UTF-8 string as Kafka keys
+   'key.format' = 'raw',
+   'key.fields' = 'pathId',
+   'value.format' = 'avro-confluent',
+   'value.avro-confluent.url' = 'http://schema-registry:6081'
+ );
+ ```
+
+```sql
+INSERT INTO `car_paths`
+SELECT `vin`,
+       `city`,
+       `licensePlate`,
+       `lastX`,
+       `lastY`,
+       CONCAT_WS('|', `sensorIdsArray`[1], 
+                      `sensorIdsArray`[2],
+                      `sensorIdsArray`[3],
+                      `sensorIdsArray`[4],
+                      `sensorIdsArray`[5],
+                      `sensorIdsArray`[6],
+                      `sensorIdsArray`[7],
+                      `sensorIdsArray`[8],
+                      `sensorIdsArray`[9],
+                      `sensorIdsArray`[10]) AS `sensorIds`, 
+       MD5(CONCAT_WS('|', `sensorIdsArray`[1], 
+                          `sensorIdsArray`[2],
+                          `sensorIdsArray`[3],
+                          `sensorIdsArray`[4],
+                          `sensorIdsArray`[5],
+                          `sensorIdsArray`[6],
+                          `sensorIdsArray`[7],
+                          `sensorIdsArray`[8],
+                          `sensorIdsArray`[9],
+                          `sensorIdsArray`[10])) AS `pathId`,
+       `startTime`,
+       `endTime`
+FROM car_detected
+MATCH_RECOGNIZE(
+  PARTITION BY `vin`
+  ORDER BY `timestamp`
+  MEASURES
+    FIRST(A.`licensePlate`) AS `licensePlate`,
+    FIRST(A.`city`) AS `city`,
+    FIRST(A.`timestamp`) AS `startTime`,
+    LAST(A.`timestamp`) AS `endTime`,
+    LAST(A.`x`) AS `lastX`,
+    LAST(A.`y`) AS `lastY`,
+    ARRAY_AGG(A.`sensorId`) AS `sensorIdsArray`
+  ONE ROW PER MATCH
+  AFTER MATCH SKIP TO NEXT ROW
+  PATTERN (A{10})
+  DEFINE
+    A AS TRUE
+);
+```
+
+Now we can check if cars have the same path.
+
+```sql
+SELECT *
+FROM car_paths
+MATCH_RECOGNIZE(
+  PARTITION BY `pathId`
+  ORDER BY `endTime`
+  MEASURES
+    GOOD_GUY.`city` AS `city`,
+    GOOD_GUY.`licensePlate` AS `goodGuyLicensePlate`,
+    GOOD_GUY.`vin` AS `goodGuyVin`,
+    GOOD_GUY.`endTime` AS `endTime`,
+    GOOD_GUY.`lastX` AS `goodGuyLastX`,
+    GOOD_GUY.`lastY` AS `goodGuyLastY`,
+    BAD_GUY.`licensePlate` AS `badGuyLicensePlate`,
+    BAD_GUY.`vin` AS `badGuyVin`,
+    BAD_GUY.`endTime` AS `badGuyEndTime`,
+    BAD_GUY.`lastX` AS `badGuyLastX`,
+    BAD_GUY.`lastY` AS `badGuyLastY`
+  ONE ROW PER MATCH
+  AFTER MATCH SKIP PAST LAST ROW
+  PATTERN (GOOD_GUY BAD_GUY)
+  DEFINE
+    GOOD_GUY AS TRUE,
+    BAD_GUY AS BAD_GUY.`vin` <> GOOD_GUY.`vin`
+);
 ```
