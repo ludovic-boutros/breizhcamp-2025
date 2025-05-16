@@ -1,4 +1,4 @@
-package bzh.breizhcamp.city;
+package bzh.breizhcamp.city.model;
 
 import bzh.breizhcamp.faker.FakerInstance;
 import lombok.Getter;

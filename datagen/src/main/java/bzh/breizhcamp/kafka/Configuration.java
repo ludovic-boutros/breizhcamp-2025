@@ -6,6 +6,7 @@ import com.typesafe.config.ConfigFactory;
 import java.util.Properties;
 
 public class Configuration {
+
     public static Properties get() {
         Config conf = ConfigFactory.load();
         Properties properties = new Properties();
@@ -16,4 +17,6 @@ public class Configuration {
 
     public static String MOVING_RATE_CONFIG_PROPERTY = "car.moving.fixed.rate.seconds";
     public static String KAFKA_CAR_DETECTED_TOPIC_NAME_PROPERTY = "kafka.car.detected.topic.name";
+    public static final String KAFKA_CAR_DETECTED_TOPIC_PARTITIONS_PROPERTY = "kafka.car.detected.topic.partitions";
+
 }

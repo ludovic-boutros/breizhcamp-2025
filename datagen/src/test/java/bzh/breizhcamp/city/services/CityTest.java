@@ -1,5 +1,8 @@
-package bzh.breizhcamp.city;
+package bzh.breizhcamp.city.services;
 
+import bzh.breizhcamp.city.model.Car;
+import bzh.breizhcamp.city.model.City;
+import bzh.breizhcamp.city.model.Position;
 import bzh.breizhcamp.json.JacksonInstance;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import org.junit.jupiter.api.Assertions;
@@ -16,19 +19,19 @@ class CityTest {
         String cityAsString = JacksonInstance.get().writeValueAsString(city);
 
         // Then
-        Assertions.assertEquals("{\"size\":10,\"name\":\"" + city.getName() + "\",\"movingRateSeconds\":1,\"carDetectedTopicName\":\"car-detected\"}", cityAsString);
+        Assertions.assertEquals("{\"size\":10,\"name\":\"" + city.getName() + "\"}", cityAsString);
     }
 
     @Test
     public void testMoveLimits() {
         // Given
-        City city = new City(2);
-        Car car = new Car(city, null);
+        CityService cityService = new CityService(1);
+        Car car = new Car(cityService.getCity(), null);
         car.setPosition(new Position(0, 1));
         car.setLastPosition(new Position(0, 0));
 
         // When
-        city.moveCarToNextPosition(car, null);
+        cityService.moveCarToNextPosition(car, null);
 
         // Then
         Assertions.assertEquals(new Position(1, 1), car.getPosition());

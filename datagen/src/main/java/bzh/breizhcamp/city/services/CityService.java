@@ -1,7 +1,9 @@
-package bzh.breizhcamp.city;
+package bzh.breizhcamp.city.services;
 
 import bzh.breizhcamp.avro.CarDetectedEvent;
-import bzh.breizhcamp.faker.FakerInstance;
+import bzh.breizhcamp.city.model.Car;
+import bzh.breizhcamp.city.model.City;
+import bzh.breizhcamp.city.model.Position;
 import bzh.breizhcamp.kafka.Configuration;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -27,13 +29,13 @@ import static bzh.breizhcamp.kafka.Configuration.MOVING_RATE_CONFIG_PROPERTY;
 @Getter
 @Slf4j
 @ToString(exclude = {"kafkaProducer"})
-public class City implements Closeable {
+public class CityService implements Closeable {
     private static final Random R = new Random();
 
-    private final int size;
-    private final String name = FakerInstance.get().gameOfThrones().city();
     private final int movingRateSeconds;
     private final String carDetectedTopicName;
+
+    private final City city;
 
     @Getter(AccessLevel.NONE)
     private KafkaProducer<String, CarDetectedEvent> kafkaProducer;
@@ -44,31 +46,27 @@ public class City implements Closeable {
     @Getter(AccessLevel.NONE)
     private final ScheduledExecutorService executorService = Executors.newScheduledThreadPool(10);
 
-    public City(int size) {
+    public CityService(int size) {
         Properties configuration = Configuration.get();
 
-        this.size = size;
+        this.city = new City(size);
         this.carDetectedTopicName = (String) configuration.get(KAFKA_CAR_DETECTED_TOPIC_NAME_PROPERTY);
         movingRateSeconds = Integer.parseInt((String) configuration.get(MOVING_RATE_CONFIG_PROPERTY));
     }
 
-    public City initKafka() throws ExecutionException, InterruptedException {
+    public CityService initKafka() throws ExecutionException, InterruptedException {
         try (AdminClient adminClient = KafkaAdminClient.create(Configuration.get())) {
             if (!adminClient.listTopics().names().get().contains(carDetectedTopicName)) {
                 log.info("Creating topic {}...", carDetectedTopicName);
                 adminClient.createTopics(Collections.singletonList(
                                 new org.apache.kafka.clients.admin.NewTopic(carDetectedTopicName,
-                                        Optional.of(1),
+                                        Optional.of(Integer.parseInt((String) Configuration.get().get(Configuration.KAFKA_CAR_DETECTED_TOPIC_PARTITIONS_PROPERTY))),
                                         Optional.empty())))
                         .all().get();
             }
         }
         kafkaProducer = new KafkaProducer<>(Configuration.get());
         return this;
-    }
-
-    public List<Car> startNewCars() {
-        return startNewCars(null, 1);
     }
 
     public List<Car> startNewCars(String followedCarVin, int count) {
@@ -85,9 +83,9 @@ public class City implements Closeable {
         List<Car> retValue = new ArrayList<>();
 
         for (int i = 0; i < count; i++) {
-            Car car = new Car(this, followedCarVin);
+            Car car = new Car(this.getCity(), followedCarVin);
 
-            Position position = new Position(R.nextInt(size), R.nextInt(size));
+            Position position = new Position(R.nextInt(city.getSize()), R.nextInt(city.getSize()));
             car.setPosition(position);
             car.setLastPosition(position);
 
@@ -140,14 +138,14 @@ public class City implements Closeable {
                 sensorId(car),
                 car.getVin(),
                 car.getLicensePlate(),
-                this.name,
+                city.getName(),
                 car.getPosition().getX(),
                 car.getPosition().getY(),
                 Instant.now()
         );
 
         if (kafkaProducer != null) {
-            ProducerRecord record = new ProducerRecord<>(carDetectedTopicName,
+            ProducerRecord<String, CarDetectedEvent> record = new ProducerRecord<>(carDetectedTopicName,
                     sensorId(car),
                     event);
             try {
@@ -166,15 +164,15 @@ public class City implements Closeable {
 
     @NotNull
     private String sensorId(Car car) {
-        return String.join("-", this.name, Integer.toString(car.getPosition().getX()), Integer.toString(car.getPosition().getY()));
+        return String.join("-", city.getName(), Integer.toString(car.getPosition().getX()), Integer.toString(car.getPosition().getY()));
     }
 
     private int getNextCoordinate(int currentCoordinate, int lastCoordinate) {
         int nextCoordinate;
         if (currentCoordinate == 0) {
             nextCoordinate = 1;
-        } else if (currentCoordinate == size - 1) {
-            nextCoordinate = size - 2;
+        } else if (currentCoordinate == city.getSize()) {
+            nextCoordinate = city.getSize() - 1;
         } else if (currentCoordinate == lastCoordinate) {
             nextCoordinate = R.nextBoolean() ? currentCoordinate + 1 : currentCoordinate - 1;
         } else {
@@ -185,9 +183,9 @@ public class City implements Closeable {
 
 
     boolean ableToMove(int lastPosition, int currentPosition) {
-        return (currentPosition > 0 && currentPosition < size - 1)
+        return (currentPosition > 0 && currentPosition < city.getSize())
                 || (currentPosition == 0 && lastPosition == 0)
-                || (currentPosition == size - 1 && lastPosition == size - 1);
+                || (currentPosition == city.getSize() && lastPosition == city.getSize());
     }
 
     @Override
@@ -198,7 +196,10 @@ public class City implements Closeable {
         executorService.shutdown();
         try {
             log.info("Waiting for executor service to shutdown...");
-            executorService.awaitTermination(5, TimeUnit.SECONDS);
+            while (!executorService.awaitTermination(1, TimeUnit.SECONDS)) {
+                log.info("Still waiting for executor service to shutdown...");
+            }
+            log.info("Executor service shutdowned.");
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }

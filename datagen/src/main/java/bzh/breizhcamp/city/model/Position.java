@@ -1,4 +1,4 @@
-package bzh.breizhcamp.city;
+package bzh.breizhcamp.city.model;
 
 import lombok.*;
 import org.jetbrains.annotations.NotNull;
