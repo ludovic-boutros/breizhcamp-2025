@@ -90,10 +90,19 @@ public class CityService implements Closeable {
             car.setLastPosition(position);
 
             log.info("New car({}) added to city: [{}]", car.getLicensePlate(), car.getPosition());
-            executorService.scheduleAtFixedRate(() -> {
-                moveCarToNextPosition(car, followedCar);
-                carDetectedAtPosition(car);
-            }, 0, movingRateSeconds, TimeUnit.SECONDS);
+            if (followedCar == null) {
+                executorService.scheduleAtFixedRate(() -> {
+                    moveCarToNextPosition(car);
+                    carDetectedAtPosition(car);
+
+                    car.getFollowingCars().forEach(followingCar -> {
+                        moveCarToNextPosition(followingCar, car.getLastPosition());
+                        carDetectedAtPosition(followingCar);
+                    });
+                }, 0, movingRateSeconds, TimeUnit.SECONDS);
+            } else {
+                followedCar.addFollowingCar(car);
+            }
 
             cars.put(car.getVin(), car);
 
@@ -102,18 +111,13 @@ public class CityService implements Closeable {
         return retValue;
     }
 
-    void moveCarToNextPosition(Car car, Car followedCar) {
-        if (followedCar != null) {
-            // TODO: if the other car did not move, should not move.
-            // TODO: I think the move should be triggered by the other car
-            if (car.getPosition().compareTo(followedCar.getPosition()) > 1) {
-                // Let some distance between the two cars ;)
-                car.setLastPosition(car.getPosition());
-                car.setPosition(new Position(
-                        followedCar.getLastPosition().getX(),
-                        followedCar.getLastPosition().getY()));
-            }
-        } else {
+    void moveCarToNextPosition(Car car) {
+        moveCarToNextPosition(car, null);
+    }
+
+    void moveCarToNextPosition(Car car, Position nextPosition) {
+        if (nextPosition == null) {
+
             Position currentPosition = car.getPosition();
             Position lastPosition = car.getLastPosition();
 
@@ -125,13 +129,14 @@ public class CityService implements Closeable {
             int lastCoordinate = moveX ? lastPosition.getX() : lastPosition.getY();
             int nextCoordinate = getNextCoordinate(currentCoordinate, lastCoordinate);
 
-            car.setLastPosition(car.getPosition());
-
-            car.setPosition(new Position(
+            nextPosition = new Position(
                     moveX ? nextCoordinate : currentPosition.getX(),
-                    moveX ? currentPosition.getY() : nextCoordinate)
-            );
+                    moveX ? currentPosition.getY() : nextCoordinate);
         }
+
+        car.setLastPosition(car.getPosition());
+        car.setPosition(nextPosition);
+
         log.trace("Car({}) moved to new position: [{}]", car.getLicensePlate(), car.getPosition());
     }
 
