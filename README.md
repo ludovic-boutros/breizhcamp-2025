@@ -331,7 +331,7 @@ https://github.com/knaufk/advent-of-flink-2024/blob/main/08_current_watermark.md
 SELECT sensorId, CURRENT_WATERMARK(`timestamp`) AS CURRENT_WATERMARK FROM `car_detected`;
 ```
 
-### Solution
+### Solutions
 
 - Recreate the topic with fewer partitions. (Hoping that the keys will be evenly distributed, or at least that all
   partitions), but would reduce the maximum parallelism.
