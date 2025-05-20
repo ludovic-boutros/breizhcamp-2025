@@ -1,5 +1,16 @@
 # BreizhCamp 2025 Talk Lab
 
+![Smart City](./images/smart-city.png)
+
+This lab aims to implement a virtual Smart City that detects cars following each other using Apache Flink SQL and Apache
+Kafka.
+
+## Prerequisities
+
+The data generator is a Java application that generates data and sends it to a Kafka topic.
+It is built using `Apache Maven`. The project leverages `Apache Flink` and `Apache Kafka` to process the data.
+The infrastructure is set up with local containers, though `Confluent Cloud` can be used for simplicity.
+
 ## How to run the project
 
 ### Start the local infrastructure
@@ -24,7 +35,17 @@ podman compose run sql-client
 
 ## Application
 
-TODO
+### Compile the project
+
+```shell
+mvn clean package
+```
+
+### Start the service
+
+```shell
+java -jar ./datagen/target/datagen-1.0-SNAPSHOT.jar
+```
 
 ## General
 
@@ -353,7 +374,7 @@ SELECT `topic_partition`, `sensorId`, CURRENT_WATERMARK(`timestamp`) AS `CURRENT
 
 ### State stores
 
-Data corresponding to the beginning of the pattern needs to be kept in memory until the end of the pattern is matched.
+Data corresponding to the beginning of the pattern needs to be kept in memory until the pattern is entirely matched.
 If the city is huge, the clause `B*` may stay _opened_ for a very long time, keeping a lot of data in memory especially
 with a very high number of cars.
 
@@ -653,13 +674,11 @@ MATCH_RECOGNIZE(
   ORDER BY `endTime`
   MEASURES
     GOOD_GUY.`city` AS `city`,
-    GOOD_GUY.`licensePlate` AS `goodGuyLicensePlate`,
     GOOD_GUY.`vin` AS `goodGuyVin`,
-    GOOD_GUY.`endTime` AS `endTime`,
+    BAD_GUY.`vin` AS `badGuyVin`,
+    GOOD_GUY.`endTime` AS `goodGuyEndTime`,
     GOOD_GUY.`lastX` AS `goodGuyLastX`,
     GOOD_GUY.`lastY` AS `goodGuyLastY`,
-    BAD_GUY.`licensePlate` AS `badGuyLicensePlate`,
-    BAD_GUY.`vin` AS `badGuyVin`,
     BAD_GUY.`endTime` AS `badGuyEndTime`,
     BAD_GUY.`lastX` AS `badGuyLastX`,
     BAD_GUY.`lastY` AS `badGuyLastY`
@@ -671,3 +690,7 @@ MATCH_RECOGNIZE(
     BAD_GUY AS BAD_GUY.`vin` <> GOOD_GUY.`vin`
 );
 ```
+
+## Run the lab on Confluent Cloud
+
+TODO

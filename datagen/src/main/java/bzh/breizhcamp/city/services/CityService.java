@@ -94,11 +94,6 @@ public class CityService implements Closeable {
                 executorService.scheduleAtFixedRate(() -> {
                     moveCarToNextPosition(car);
                     carDetectedAtPosition(car);
-
-                    car.getFollowingCars().forEach(followingCar -> {
-                        moveCarToNextPosition(followingCar, car.getLastPosition());
-                        carDetectedAtPosition(followingCar);
-                    });
                 }, 0, movingRateSeconds, TimeUnit.SECONDS);
             } else {
                 followedCar.addFollowingCar(car);
@@ -117,7 +112,6 @@ public class CityService implements Closeable {
 
     void moveCarToNextPosition(Car car, Position nextPosition) {
         if (nextPosition == null) {
-
             Position currentPosition = car.getPosition();
             Position lastPosition = car.getLastPosition();
 
@@ -138,6 +132,10 @@ public class CityService implements Closeable {
         car.setPosition(nextPosition);
 
         log.trace("Car({}) moved to new position: [{}]", car.getLicensePlate(), car.getPosition());
+
+        car.getFollowingCars().forEach(followingCar -> {
+            moveCarToNextPosition(followingCar, car.getLastPosition());
+        });
     }
 
     private void carDetectedAtPosition(Car car) {
@@ -160,13 +158,17 @@ public class CityService implements Closeable {
                     if (exception != null) {
                         log.error("Exception while sending event to Kafka:", exception);
                     } else {
-                        log.debug("Car({}) detected at position: [{}]", car.getLicensePlate(), car.getPosition());
+                        log.debug("[{}] Car({}) detected at position: [{}]", car.getCity().getName(), car.getVin(), car.getPosition());
                     }
                 });
             } catch (Exception exception) {
                 log.error("Exception while sending event to Kafka:", exception);
             }
         }
+
+        car.getFollowingCars().forEach(followingCar -> {
+            carDetectedAtPosition(followingCar);
+        });
     }
 
     @NotNull

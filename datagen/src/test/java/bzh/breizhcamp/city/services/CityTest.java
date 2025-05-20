@@ -19,7 +19,7 @@ class CityTest {
         String cityAsString = JacksonInstance.get().writeValueAsString(city);
 
         // Then
-        Assertions.assertEquals("{\"size\":10,\"name\":\"" + city.getName() + "\"}", cityAsString);
+        Assertions.assertEquals("{\"size\":10,\"name\":\"" + city.getName() + "\",\"id\":\"" + city.getId() + "\"}", cityAsString);
     }
 
     @Test
@@ -35,5 +35,23 @@ class CityTest {
 
         // Then
         Assertions.assertEquals(new Position(1, 1), car.getPosition());
+    }
+
+    @Test
+    public void testFollowerMove() {
+        // Given
+        CityService cityService = new CityService(1);
+        Car car = new Car(cityService.getCity(), null);
+        Car followingCar = new Car(cityService.getCity(), car.getFollowedCarVin());
+        car.addFollowingCar(followingCar);
+
+        car.setPosition(new Position(0, 1));
+        car.setLastPosition(new Position(0, 0));
+
+        // When
+        cityService.moveCarToNextPosition(car, null);
+
+        // Then
+        Assertions.assertEquals(new Position(0, 1), followingCar.getPosition());
     }
 }
