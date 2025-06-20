@@ -19,6 +19,18 @@ The infrastructure is set up with local containers, though `Confluent Cloud` can
 podman compose up -d --remove-orphans
 ```
 
+### Stop the local infrastructure
+
+```shell
+podman compose down
+```
+
+### Delete the local data
+
+```shell
+rm -Rf ./data/kafka
+```
+
 ### Check the local infrastructure
 
 ```shell
@@ -284,6 +296,14 @@ CREATE TABLE car_detected (
 SELECT * FROM car_detected;
 ```
 
+```sql
+SELECT `sensorId`, 
+    count(*) AS `count`, 
+    MAX(`timestamp`) AS `lastSeen`
+FROM `car_detected` 
+GROUP BY `sensorId`;
+```
+
 ## Search cars that are going several times in the same place using pattern recognition
 
 ### A first approach
@@ -295,6 +315,7 @@ FROM `car_detected`
         PARTITION BY `vin`
         ORDER BY `timestamp`
         MEASURES
+            A.`city` AS city,
             A.`timestamp` AS A_ts,
             A.`x` AS A_x,
             A.`y` AS A_y,
@@ -316,16 +337,21 @@ Why?
 
 ### Watermarks!
 
+```sql
+ALTER TABLE `car_detected` ADD `topic_partition` INT METADATA FROM 'partition';
+SELECT `topic_partition`, `sensorId`, CURRENT_WATERMARK(`timestamp`) AS `CURRENT_WATERMARK` FROM `car_detected`;
+```
+
 This small city contains only **4** different sensors generating **4** different message keys.
 This is an example of an **idle** partitions.
 Some partitions will never get any message and their watermark will stall.
 This leads to a situation where the stream will never make any progress.
 
-https://rmoff.net/2025/04/25/its-time-we-talked-about-time-exploring-watermarks-and-more-in-flink-sql/
-https://www.youtube.com/watch?v=sdhwpUAjqaI
-https://www.youtube.com/watch?v=PWLjEyJxhg0
-https://current.confluent.io/2024-sessions/timing-is-everything-understanding-event-time-processing-in-flink-sql
-https://github.com/knaufk/advent-of-flink-2024/blob/main/08_current_watermark.md
+- https://rmoff.net/2025/04/25/its-time-we-talked-about-time-exploring-watermarks-and-more-in-flink-sql/
+- https://www.youtube.com/watch?v=sdhwpUAjqaI
+- https://www.youtube.com/watch?v=PWLjEyJxhg0
+- https://current.confluent.io/2024-sessions/timing-is-everything-understanding-event-time-processing-in-flink-sql
+- https://github.com/knaufk/advent-of-flink-2024/blob/main/08_current_watermark.md
 
 ```sql
 SELECT sensorId, CURRENT_WATERMARK(`timestamp`) AS CURRENT_WATERMARK FROM `car_detected`;
@@ -367,18 +393,13 @@ curl -s -X POST "http://localhost:7070/cities/${encoded_name}/cars" | jq .
 curl -s -X GET "http://localhost:7070/cities/${encoded_name}/cars" | jq .
 ```
 
-```sql
-ALTER TABLE `car_detected` ADD `topic_partition` INT METADATA FROM 'partition';
-SELECT `topic_partition`, `sensorId`, CURRENT_WATERMARK(`timestamp`) AS `CURRENT_WATERMARK` FROM `car_detected`;
-```
-
 ### State stores
 
 Data corresponding to the beginning of the pattern needs to be kept in memory until the pattern is entirely matched.
 If the city is huge, the clause `B*` may stay _opened_ for a very long time, keeping a lot of data in memory especially
 with a very high number of cars.
 
-### Create a very huge city with 10000 cars
+### Create a very huge city with 20000 cars
 
 First delete the current city.
 
@@ -486,9 +507,14 @@ FROM `car_detected`
     );
 ```
 
-10_000 * 20_000 = 100_000_000 potential different opened patterns in memory!
-We need to limit the number of opened patterns to a reasonable number using a `WITHIN INTERVAL` clause.
-We could as well increase the memory size of the job manager.
+A maximum of 10_000 * 10_000 * 20_000 = 2_000_000_000_000 potential different opened patterns in memory!
+
+But this is not really true because we only have 20_000 cars and each car has a limited number of sensors.
+This is a lot of opened patterns, but it is not infinite.
+
+We still need to limit the number of opened patterns to a reasonable number using a `WITHIN INTERVAL` clause.
+
+We also probably need to increase the memory size of the job managers.
 
 Let's produce the result in another output topic:
 
