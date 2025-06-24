@@ -425,6 +425,12 @@ curl -s -X POST "http://localhost:7070/cities/${encoded_name}/cars?count=20000" 
 
 ### Try to run the first approach
 
+Let's increase the parallelism to 8 in order to be able to run the query on a bigger city.
+
+```sql
+SET 'parallelism.default' = '8';
+```
+
 ```sql
 SELECT *
 FROM `car_detected`
