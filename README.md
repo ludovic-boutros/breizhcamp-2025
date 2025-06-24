@@ -241,6 +241,8 @@ curl -s -X GET "http://localhost:7070/cities/${encoded_name}/cars" | jq .
 
 ### Create a very small city with one car
 
+![Smart City](./images/one-car-smallest-city.png)
+
 First delete the current city.
 
 ```shell
