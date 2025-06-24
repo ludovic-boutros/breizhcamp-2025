@@ -93,4 +93,15 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: jobmanager
-        rest.address: jobmanager  
+        rest.address: jobmanager
+
+  datagen:
+    build: .
+    depends_on:
+      - broker
+      - schema-registry
+    ports:
+      - "7070:7070"
+    environment:
+      BOOTSTRAP_SERVERS: 'broker:29092'
+      SCHEMA_REGISTRY_URL: 'http://schema-registry:6081'

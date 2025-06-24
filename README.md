@@ -37,7 +37,11 @@ rm -Rf ./data/kafka
 podman ps
 open http://localhost:9021
 open http://localhost:8081
+open http://localhost:7070/swagger
+podman compose logs -f datagen
 ```
+
+Jump to the [City Lab](#Apache-Flink-processing).
 
 ### Start Apache Flink SQL shell
 
@@ -54,6 +58,8 @@ mvn clean package
 ```
 
 ### Start the service
+
+If not already started in a container, you can run the service using:
 
 ```shell
 java -jar ./datagen/target/datagen-1.0-SNAPSHOT.jar
@@ -339,6 +345,9 @@ Why?
 
 ```sql
 ALTER TABLE `car_detected` ADD `topic_partition` INT METADATA FROM 'partition';
+```
+
+```sql
 SELECT `topic_partition`, `sensorId`, CURRENT_WATERMARK(`timestamp`) AS `CURRENT_WATERMARK` FROM `car_detected`;
 ```
 
@@ -360,9 +369,9 @@ SELECT sensorId, CURRENT_WATERMARK(`timestamp`) AS CURRENT_WATERMARK FROM `car_d
 ### Solutions
 
 - Recreate the topic with fewer partitions. (Hoping that the keys will be evenly distributed, or at least that all
-  partitions), but would reduce the maximum parallelism.
+  partitions), but would reduce the maximum parallelism. 🫣
 - Use another message key.
-- Create a bigger city.
+- Create a bigger city. 😛
 - Configure an idle timeout:
 
 ```sql
