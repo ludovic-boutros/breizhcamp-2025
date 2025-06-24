@@ -232,7 +232,7 @@ curl -s -X GET "http://localhost:7070/cities/${encoded_name}/cars" | jq .
 
 export vin=$(curl -s -X GET "http://localhost:7070/cities/${encoded_name}/cars" | jq -r '.[0].vin')
 
-curl -s -X POST "http://localhost:7070/cities/${name}/cars?vin=${vin}" | jq .
+curl -s -X POST "http://localhost:7070/cities/${encoded_name}/cars?vin=${vin}" | jq .
 
 curl -s -X GET "http://localhost:7070/cities/${encoded_name}/cars" | jq .
 ```
@@ -436,10 +436,10 @@ curl -s -X POST "http://localhost:7070/cities/${encoded_name}/cars?count=20000" 
 
 ### Try to run the first approach
 
-Let's increase the parallelism to 8 in order to be able to run the query on a bigger city.
+Let's increase the parallelism to 3 in order to be able to run the query on a bigger city.
 
 ```sql
-SET 'parallelism.default' = '8';
+SET 'parallelism.default' = '3';
 ```
 
 ```sql
@@ -620,7 +620,7 @@ name=$(curl -s -X GET http://localhost:7070/cities | jq -r '.[0].name')
 export encoded_name=$(echo -n "$name" | jq -s -R -r @uri)
 export vin=$(curl -s -X GET "http://localhost:7070/cities/${encoded_name}/cars" | jq -r '.[0].vin')
 
-curl -s -X POST "http://localhost:7070/cities/${name}/cars?vin=${vin}" | jq .
+curl -s -X POST "http://localhost:7070/cities/${encoded_name}/cars?vin=${vin}" | jq .
 ```
 
 ### Transform the data in order to get car's paths as a key.
@@ -656,7 +656,13 @@ CREATE TABLE `car_paths` (
    'value.format' = 'avro-confluent',
    'value.avro-confluent.url' = 'http://schema-registry:6081'
  );
- ```
+```
+
+Ignore old data in the `car_detected` table and start from the latest offset.
+
+```sql
+ALTER TABLE `car_detected` SET ('scan.startup.mode'='latest-offset');
+```
 
 ```sql
 INSERT INTO `car_paths`
@@ -687,7 +693,7 @@ SELECT `vin`,
                           `sensorIdsArray`[10])) AS `pathId`,
        `startTime`,
        `endTime`
-FROM car_detected
+FROM `car_detected`
 MATCH_RECOGNIZE(
   PARTITION BY `vin`
   ORDER BY `timestamp`
